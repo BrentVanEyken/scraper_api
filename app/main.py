@@ -5,6 +5,7 @@ import logging
 from pathlib import Path
 from typing import List, Optional, Callable
 import re
+from fastapi import Query
 
 from fastapi import FastAPI, HTTPException, Header
 from pydantic import BaseModel, HttpUrl
@@ -250,3 +251,50 @@ async def scrape_cleaned_chapter(url: HttpUrl, xpath: str):
         cleaned_data = clean_scraped_chapter(scraped_data)
         return {"scraped_data": cleaned_data}
     raise HTTPException(status_code=404, detail="No content found at the provided XPath.")
+
+@app.get("/scrape/cleaned-batch")
+async def scrape_cleaned_batch(
+    base_url: HttpUrl,
+    xpath: str,
+    chapter_start: int = Query(..., ge=1),
+    chapter_end: int = Query(..., ge=1)
+):
+    """
+    Batch scrapes and cleans chapters in the given range from a base URL.
+    Example: base_url=https://example.com/novel, xpath=..., chapter_start=1, chapter_end=10
+    Will scrape: https://example.com/novel/chapter-1 ... chapter-10
+    """
+
+    if chapter_end < chapter_start:
+        raise HTTPException(status_code=400, detail="chapter_end must be >= chapter_start")
+
+    async def process_chapter(chapter_number: int):
+        chapter_url = f"{base_url}/chapter-{chapter_number}"
+        try:
+            raw_data = await scraper_scrape_content_txt(chapter_url, xpath)
+            if raw_data:
+                cleaned = clean_scraped_chapter(raw_data)
+                return {
+                    "chapter": chapter_number,
+                    "url": chapter_url,
+                    "scraped_data": cleaned,
+                    "status": "success"
+                }
+            return {
+                "chapter": chapter_number,
+                "url": chapter_url,
+                "error": "No content found at the XPath.",
+                "status": "failed"
+            }
+        except Exception as e:
+            logger.error(f"Error scraping chapter {chapter_number}: {e}")
+            return {
+                "chapter": chapter_number,
+                "url": chapter_url,
+                "error": str(e),
+                "status": "failed"
+            }
+
+    tasks = [process_chapter(ch) for ch in range(chapter_start, chapter_end + 1)]
+    results = await asyncio.gather(*tasks)
+    return {"results": results}
