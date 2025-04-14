@@ -18,7 +18,7 @@ def get_page(url: str, wait_xpath: Optional[str] = None) -> html.HtmlElement:
             browser = p.chromium.launch(headless=True)
             context = browser.new_context()
             page = context.new_page()
-            page.goto(url, timeout=30000)  # Increase timeout to 30 seconds
+            page.goto(url, timeout=15000)
 
             if wait_xpath:
                 # Wait for the element matching the XPath to be visible
